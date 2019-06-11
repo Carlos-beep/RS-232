@@ -1,0 +1,240 @@
+Imports System.ComponentModel
+Imports System.IO
+Imports System.IO.Ports
+'MiddleWare Para Interfaz de Bascula/App Web
+'Version 17.2.M
+Public Class TXRX
+    Dim i As Integer
+    '   ↓   ↓   ↓   ↓   Receptor de datos en el puerto serial
+    Dim BufferEntrada As String, CONFIGURACION As String
+    'Ruta del archivo para config ↑    ↑    ↑    ↑
+    Dim BufferSalida As Char
+    Dim Baudios As String, DataBits As String, Paridad As String
+    Dim BitStop As String, PortName As String
+    'Parametros del puerto COM
+    Dim ruta As String, ruta2 As String, ruta3 As String
+    'Archivos txt temporales, filtros, concentrado de datos
+    Dim Line As String, Line2 As String
+    'Variables auxiliares para filtros
+    Private Sub TXRX_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        CboPuertos.Enabled = False
+        Timer1.Enabled = True
+        CheckForIllegalCrossThreadCalls = False
+        CON.Text = "C:\Users\practicas sti\Desktop\DNS\CONFIG.txt"
+        'CON.Text = "C:\Users\Kenya\Documents\PORT Y\CONFIG.txt"
+        CONFIGURACION = CON.Text
+        'Creamos un objeto lector de txt
+        Dim Leer As New StreamReader(CONFIGURACION)
+        Dim arrText As New ArrayList()
+        Do
+            'codigo lector de lineas 
+            Line = Leer.ReadLine()
+            If Not Line Is Nothing Then
+                arrText.Add(Line)
+            End If
+            'Leemos todo el archivo
+        Loop Until Line Is Nothing
+        Leer.Close()
+        i = 0
+        Label1.Text = "Ejecutando ."
+        For Each Line In arrText
+            i += 1
+            Select Case i
+                Case 1
+                    'Linea 1, velocidad en baudios
+                    Baudios = Line
+                Case 2
+                    'Linea 2, Bits de datos
+                    DataBits = Line
+                Case 3
+                    'Line 3, bits de paridad
+                    If Line = "IO.Ports.Parity.None" Then
+                        Paridad = IO.Ports.Parity.None
+                    ElseIf Line = "IO.Ports.Parity.Odd" Then
+                        Paridad = IO.Ports.Parity.Odd
+                    ElseIf Line = "IO.Ports.Parity.Even" Then
+                        Paridad = IO.Ports.Parity.Even
+                    ElseIf Line = "IO.Ports.Parity.Mark" Then
+                        Paridad = IO.Ports.Parity.Mark
+                    ElseIf Line = "IO.Ports.Parity.Space" Then
+                        Paridad = IO.Ports.Parity.Space
+                    End If
+                Case 4
+                    'Linea 4, bits de paro
+                    If Line = "IO.Ports.StopBits.None" Then
+                        BitStop = IO.Ports.StopBits.None
+                    ElseIf Line = "IO.Ports.StopBits.One" Then
+                        BitStop = IO.Ports.StopBits.One
+                    ElseIf Line = "IO.Ports.StopBits.Tw" Then
+                        BitStop = IO.Ports.StopBits.Two
+                    ElseIf Line = "IO.Ports.StopBits.TwoPointFive" Then
+                        BitStop = IO.Ports.StopBits.OnePointFive
+                    End If
+                Case 5
+                    'Linea 5, nombre del puerto COM
+                    PortName = Line
+                Case 6
+                    'Linea 6, ruta para archivos temporales
+                    ruta = Line
+                    ruta2 = Line
+                    ruta3 = Line
+                    RutaFiltro.Text = ruta
+                Case 7
+                    'Linea 7, Parametro a enviar
+                    BufferSalida = Line
+                    If Environment.GetCommandLineArgs.Length > 1 Then
+                        BufferSalida = Environment.GetCommandLineArgs(1)
+                    End If
+            End Select
+        Next
+        'Nombres definidos para los archivos
+        ruta &= "\LECTURA.txt"
+        ruta2 &= "\FILTRO.txt"
+        ruta3 &= "\DATOS.txt"
+        BufferEntrada = ""
+        Try
+            'Abrimos y configuramos el puerto COM
+            With SpPuerto
+                .BaudRate = Baudios
+                .DataBits = DataBits
+                .Parity = Paridad
+                .StopBits = BitStop
+                .PortName = PortName
+                .Open()
+                Label1.Text = "Ejecutando .."
+            End With
+        Catch ex As Exception
+            'ex.Message, MsgBoxStyle.Critical)
+            MsgBox("No hay puertos disponibles", MsgBoxStyle.Critical)
+            Me.Close()
+        End Try
+        'Invocamos la funcion limpar ruta
+        DelFil()
+        'Invocamos la funcion que envia un parametro
+        SendDat()
+        Label1.Text = "Ejecutando ..."
+        CboPuertos.Items.Clear()
+        For Each PuertosDisponible As String In My.Computer.Ports.SerialPortNames
+            CboPuertos.Items.Add(PuertosDisponible)
+        Next
+        If CboPuertos.Items.Count > 0 Then
+            'SE ENCONTRO PUERTO
+            CboPuertos.Text = CboPuertos.Items(0)
+        Else
+            'NINGUN PUERTO ENCONTRADO
+            MsgBox("No hay puertos disponibles")
+            CboPuertos.Items.Clear()
+            Me.Close()
+        End If
+    End Sub
+    Private Sub Datorecibido(sender As Object, e As IO.Ports.SerialDataReceivedEventArgs) Handles SpPuerto.DataReceived
+        Label1.Text = "Leyendo ."
+        'FILTRO 1
+        'Leemos el puerto serial
+        BufferEntrada = SpPuerto.ReadLine
+        'Invocamos la funcion guardar
+        Guardar()
+        'creamos un objeto lector
+        Dim Lector As New StreamReader(ruta)
+        Dim arrText As New ArrayList()
+        Do
+            'codigo lector de lineas
+            Line = Lector.ReadLine()
+            If Not Line Is Nothing Then
+                arrText.Add(Line)
+            End If
+        Loop Until Line Is Nothing
+        Lector.Close()
+        i = 0
+        Label1.Text = "Leyendo .."
+        For Each Line In arrText
+            i += 1
+            'elegimos solo las lineas importantes
+            'las escribimos en orden en un nuevo txt
+            'segundo archivo - filtro de datos
+            If i = 6 Then
+                'Invocamos la funcion guardar 2
+                'esta vez en un nuevo txt
+                Guardar2(Line)
+            ElseIf i = 7 Then
+                Guardar2(Line)
+            ElseIf i = 8 Then
+                Guardar2(Line)
+                Label1.Text = "Leyendo ..."
+                'Activamos el segundo filtro
+                ReceiveSerialData()
+            End If
+        Next
+    End Sub
+    Function ReceiveSerialData()
+        'FILTRO 2
+        Label1.Text = "Guardando datos ."
+        'Creamos un objeto lector de txt
+        Dim Lector2 As New StreamReader(ruta2)
+        Dim arrText2 As New ArrayList()
+        Do
+            'este codigo guarda cada liena en una matriz
+            Line2 = Lector2.ReadLine()
+            If Not Line2 Is Nothing Then
+                arrText2.Add(Line2)
+            End If
+        Loop Until Line2 Is Nothing
+        'cerramos el objeto lector 
+        Lector2.Close()
+        i = 0
+        Label1.Text = "Guardando datos .."
+        'Comenzamos a escribir un nuevo txt
+        'pero solo lineas especificas del anterior documento
+        For Each Line2 In arrText2
+            i += 1
+            'contamos el total de lineas            
+            Dim ToLine() As String = File.ReadAllLines(ruta2)
+            Dim contador As Integer = CStr(ToLine.Length)
+            Dim lineas As Integer = contador - 2
+            If i = lineas Then
+                'Invocamos la funcion guardar 3
+                'Aqui solo guardamos TARA, NETO, BRUTO
+                Guardar3(Line2)
+            ElseIf i = lineas + 1 Then
+                Guardar3(Line2)
+            ElseIf i = contador Then
+                Guardar3(Line2)
+                Label1.Text = "Guardando datos ..."
+            End If
+        Next
+        'Cerramos el puerto
+        SpPuerto.Close()
+        'Cerramos el .exe
+        Me.Close()
+        Return 0
+    End Function
+    Private Sub Guardar()
+        'Guardamos todo lo que envia la bascula en el puerto serial 
+        'generamos un txt nuevo con todo lo que recibio
+        My.Computer.FileSystem.WriteAllText(ruta, BufferEntrada, True)
+    End Sub
+    Function Guardar2(Line)
+        'Guardamos solo las lineas seleccionadas en el filtro 1
+        My.Computer.FileSystem.WriteAllText(ruta2, Line & vbCrLf, True)
+        Return 2
+    End Function
+    Function Guardar3(Lineas)
+        'Guardamos solo las lineas seleccionadas en el filtro 2
+        My.Computer.FileSystem.WriteAllText(ruta3, Lineas & vbCrLf, True)
+        Return 3
+    End Function
+    Function DelFil()
+        'Para evitar redundancia de datos
+        'Limpiamos la ruta de archivos similares
+        Label1.Text = "Limpiando ..."
+        File.Delete(ruta)
+        File.Delete(ruta2)
+        File.Delete(ruta3)
+        Return 0
+    End Function
+    Function SendDat()
+        SpPuerto.DiscardInBuffer()
+        SpPuerto.Write(BufferSalida)
+        Return 0
+    End Function
+End Class
